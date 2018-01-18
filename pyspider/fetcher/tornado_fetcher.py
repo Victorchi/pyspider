@@ -107,7 +107,9 @@ class Fetcher(object):
         }
 
     def send_result(self, type, task, result):
-        '''Send fetch result to processor'''
+        '''Send fetch result to processor
+            发送获取的结果到 processor(处理器)
+        '''
         if self.outqueue:
             try:
                 self.outqueue.put((task, result))
@@ -115,6 +117,7 @@ class Fetcher(object):
                 logger.exception(e)
 
     def fetch(self, task, callback=None):
+        # 获取单个请求,增加判断是否使用异步fetch
         if self.async:
             return self.async_fetch(task, callback)
         else:
@@ -122,7 +125,7 @@ class Fetcher(object):
 
     @gen.coroutine
     def async_fetch(self, task, callback=None):
-        '''Do one fetch'''
+        '''判断是否使用phantomjs，并在请求完毕之后调用callback，调用on_fetch等等,'''
         url = task.get('url', 'data:,')
         if callback is None:
             callback = self.send_result
@@ -151,7 +154,10 @@ class Fetcher(object):
         raise gen.Return(result)
 
     def sync_fetch(self, task):
-        '''Synchronization fetch, usually used in xmlrpc thread'''
+        # Todo
+        '''Synchronization fetch, usually used in xmlrpc thread
+            暂时没发现有什么用回来再看
+        '''
         if not self._running:
             return self.ioloop.run_sync(functools.partial(self.async_fetch, task, lambda t, _, r: True))
 
@@ -635,7 +641,9 @@ class Fetcher(object):
         raise gen.Return(result)
 
     def run(self):
-        '''Run loop'''
+        '''Run loop
+        在inqueue中不断取task，进行self.fetch.默认使用异步抓取,ansync_fetch
+        '''
         logger.info("fetcher starting...")
 
         def queue_loop():
@@ -650,7 +658,9 @@ class Fetcher(object):
                     task = self.inqueue.get_nowait()
                     # FIXME: decode unicode_obj should used after data selete from
                     # database, it's used here for performance
+                    # 从这里获取对象
                     task = utils.decode_unicode_obj(task)
+                    # 传递给获取
                     self.fetch(task)
                 except queue.Empty:
                     break
@@ -659,7 +669,15 @@ class Fetcher(object):
                 except Exception as e:
                     logger.exception(e)
                     break
-
+        # 这两处请求代码都是放入tornado相关组件中进行管理的，那么重点来了，tornado起到什么管理作用？
+        '''
+        按照官方解释，ioloop是底层 IO事件循环（IO多路复用） 的包装，底层可以使用epoll、kqueue甚至poll、select等等
+        那么什么事 IO事件循环呢？
+        http://www.zhihu.com/question/32163005
+        简而言之，IO事件，比如说常见的读写socket这种事件，可以使用一个线程进行一个socket，在很多socket（并发量非常大的）时候，会使得线程爆炸，同时由于socket其实不是始终处于需要读写（CPU控制），很多时候在进行等待，使得CPU不断切换线程，效率降低。那么另外一种模型就是，最好有机制告诉CPU那个socket需要读写（CPU控制）了，然后定向读写，这样理论上只要有一个线程就可以了。
+        所以loop的核心api是告诉loop ，需要监听 哪个socket 的 哪个事件 如何处理。
+        这里官方文档展示了io_loop的核心api add_handler(socket,callback,event);
+        '''
         tornado.ioloop.PeriodicCallback(queue_loop, 100, io_loop=self.ioloop).start()
         tornado.ioloop.PeriodicCallback(self.clear_robot_txt_cache, 10000, io_loop=self.ioloop).start()
         self._running = True
