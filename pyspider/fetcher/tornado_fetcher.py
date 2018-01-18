@@ -37,6 +37,7 @@ logger = logging.getLogger('fetcher')
 
 
 class MyCurlAsyncHTTPClient(CurlAsyncHTTPClient):
+    # 使用了tornado的CurlAsyncHttpClient 方法
 
     def free_size(self):
         return len(self._free_list)
